@@ -3,15 +3,16 @@ import time
 import threading
 import random
 
+ip = "192.168.1.155"
 # Create a UDP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # Bind the socket to the port
-client_address = (socket.gethostname(), 20001)
+client_address = (socket.gethostname(), 20007)
 sock.bind(client_address)
 buffSize = 1024
 
-local_time = 15
+local_time = 10
 drift = random.randrange(95, 110) / 100
 lock = threading.Lock()
 
@@ -26,15 +27,22 @@ def send_message(message, destination):
 # Thread that listens to local time requests from server
 def respond_to_server():
     global local_time
+    sock.settimeout(5)
     while True:
-        data, address = sock.recvfrom(buffSize)
-        print("MESSAGE RECEIVED FROM SERVER")
-        if data.decode() == "TIME":
-            send_message(str(local_time).encode(), address)
-            print("--> Sent local time to server")
-        else:
-            local_time += float(data.decode())
-            print("<-- Correction given by server: {}".format(data.decode()))
+        try:
+            data, address = sock.recvfrom(buffSize)
+            if data.decode() == "TIME":
+                send_message(str(local_time), address)
+                print("--> Sent local time to server")
+            elif data.decode() == "ACK":
+                print("ACK RECEIVED")
+            else:
+                local_time += float(data.decode())
+                print("<-- Correction given by server: {}".format(data.decode()))
+        except sock.timeout:
+            sock.sendto("JOIN".encode(), (ip, 20001))
+            print("Trying to reconnect to server")
+            continue
 
 # Thread that updates the local time
 def update_time():
@@ -45,16 +53,18 @@ def update_time():
 
 def print_time():
     while True:
-        print("Current local time is: {}".format(local_time))
+        print("Current local time is: {}".format(round(local_time, 2)))
         time.sleep(5)
+
 
 if __name__ == "__main__":
     # Join the system
-    if sock.sendto("JOIN".encode(), ("83.255.206.155", 20001)):
-        print("JOIN MESSAGE SENT")
-    else:
-        print("JOIN MESSAGE FAILED")
+    sock.sendto("JOIN".encode(), (ip, 20001))
+    print("JOIN MESSAGE SENT")
+    data, address = sock.recvfrom(buffSize)
+    if data.decode() == "ACK":
+        print("ACK RECEIVED")
     # Start the threads
     threading.Thread(target=respond_to_server).start()
     threading.Thread(target=update_time).start()
-    threading.Thread(target=print_time).start()
+    #threading.Thread(target=print_time).start()
